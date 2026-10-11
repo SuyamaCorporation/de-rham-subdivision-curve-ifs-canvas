@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>de Rham Subdivision Curve Canvas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen p-4">
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-bold text-center text-teal-400 mb-1">de Rham Subdivision Curve</h1>
+  <p class="text-center text-gray-400 text-sm mb-4">Click canvas to place control points (5-10) · Watch fractal curve emerge</p>
+
+  <!-- Controls -->
+  <div class="bg-gray-800 rounded-xl p-4 mb-4">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div>
+        <label class="text-xs text-gray-300 block mb-1">α (tension): <span id="alpha-val" class="text-teal-300">0.25</span></label>
+        <input type="range" id="alpha-slider" min="0.1" max="0.9" step="0.01" value="0.25" class="w-full">
+        <div class="text-xs text-gray-500 mt-1">0.25 = Chaikin · 0.5 = Midpoint</div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-300 block mb-1">Iterations: <span id="iter-val" class="text-teal-300">5</span></label>
+        <input type="range" id="iter-slider" min="1" max="8" step="1" value="5" class="w-full">
+      </div>
+      <div class="flex flex-col gap-2">
+        <button id="btn-animate" class="bg-teal-800 hover:bg-teal-700 px-3 py-1 rounded text-xs">▶ Morph α</button>
+        <button id="btn-clear" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-xs">Clear Points</button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <button id="btn-demo" class="bg-indigo-800 hover:bg-indigo-700 px-3 py-1 rounded text-xs">Load Demo</button>
+        <label class="flex items-center gap-1 text-xs text-gray-300 cursor-pointer">
+          <input type="checkbox" id="show-polygon" checked class="accent-teal-500">
+          Show Control Polygon
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div class="bg-gray-900 rounded-xl p-2">
+    <canvas id="canvas" width="600" height="460" class="rounded w-full cursor-crosshair"></canvas>
+  </div>
+
+  <div class="text-xs text-gray-600 text-center mt-2">
+    Points: <span id="pt-count">0</span>/10 · Left-click to add · Right-click to remove last
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = 600, H = 460;
+
+let controlPoints = [];
+let animRunning = false;
+let animId = null;
+let animAlpha = 0.1;
+let animDir = 1;
+
+function getAlpha() { return parseFloat(document.getElementById('alpha-slider').value); }
+function getIter() { return parseInt(document.getElementById('iter-slider').value); }
+
+function deRhamSubdivide(pts, alpha, open=false) {
+  if (pts.length < 2) return pts;
+  const result = [];
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[i];
+    const p1 = pts[(i+1) % n];
+    result.push({
+      x: (1-alpha)*p0.x + alpha*p1.x,
+      y: (1-alpha)*p0.y + alpha*p1.y
+    });
+    result.push({
+      x: alpha*p0.x + (1-alpha)*p1.x,
+      y: alpha*p0.y + (1-alpha)*p1.y
+    });
+  }
+  return result;
+}
+
+function getCurvePoints(pts, alpha, depth) {
+  if (pts.length < 2) return pts;
+  let current = [...pts];
+  for (let i = 0; i < depth; i++) {
+    current = deRhamSubdivide(current, alpha);
+  }
+  return current;
+}
+
+function draw(alphaOverride) {
+  const alpha = alphaOverride !== undefined ? alphaOverride : getAlpha();
+  const iter = getIter();
+  const showPolygon = document.getElementById('show-polygon').checked;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#070712';
+  ctx.fillRect(0, 0, W, H);
+
+  if (controlPoints.length === 0) {
+    ctx.fillStyle = '#334';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Click to place control points', W/2, H/2);
+    return;
+  }
+
+  // Draw control polygon
+  if (showPolygon && controlPoints.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(controlPoints[0].x, controlPoints[0].y);
+    for (let i = 1; i < controlPoints.length; i++) {
+      ctx.lineTo(controlPoints[i].x, controlPoints[i].y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(100,150,200,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4,4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Draw control points
+  controlPoints.forEach((p,i) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI*2);
+    ctx.fillStyle = '#64b5f6';
+    ctx.fill();
+    ctx.fillStyle = '#888';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(i+1, p.x, p.y-8);
+  });
+
+  if (controlPoints.length < 2) return;
+
+  // Get subdivision curve
+  const curvePts = getCurvePoints(controlPoints, alpha, iter);
+  if (curvePts.length < 2) return;
+
+  // Draw curve with gradient
+  const n = curvePts.length;
+  for (let i = 0; i < n; i++) {
+    const t = i / n;
+    const p0 = curvePts[i];
+    const p1 = curvePts[(i+1) % n];
+    const h = Math.round(t * 300);
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    ctx.lineTo(p1.x, p1.y);
+    ctx.strokeStyle = `hsl(${h},80%,60%)`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // Alpha label
+  ctx.fillStyle = 'rgba(100,220,200,0.8)';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`α = ${alpha.toFixed(3)} · iter = ${iter} · pts = ${curvePts.length}`, 10, 20);
+}
+
+canvas.addEventListener('click', e => {
+  if (controlPoints.length >= 10) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (W / rect.width);
+  const y = (e.clientY - rect.top) * (H / rect.height);
+  controlPoints.push({x, y});
+  document.getElementById('pt-count').textContent = controlPoints.length;
+  draw();
+});
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (controlPoints.length > 0) {
+    controlPoints.pop();
+    document.getElementById('pt-count').textContent = controlPoints.length;
+    draw();
+  }
+});
+
+document.getElementById('alpha-slider').addEventListener('input', e => {
+  document.getElementById('alpha-val').textContent = parseFloat(e.target.value).toFixed(2);
+  draw();
+});
+document.getElementById('iter-slider').addEventListener('input', e => {
+  document.getElementById('iter-val').textContent = e.target.value;
+  draw();
+});
+document.getElementById('show-polygon').addEventListener('change', draw);
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  controlPoints = [];
+  document.getElementById('pt-count').textContent = 0;
+  draw();
+});
+
+document.getElementById('btn-demo').addEventListener('click', () => {
+  controlPoints = [
+    {x:100,y:350},{x:150,y:100},{x:250,y:80},{x:350,y:200},
+    {x:450,y:80},{x:540,y:200},{x:500,y:350},{x:300,y:420}
+  ];
+  document.getElementById('pt-count').textContent = controlPoints.length;
+  draw();
+});
+
+document.getElementById('btn-animate').addEventListener('click', () => {
+  if (animRunning) {
+    cancelAnimationFrame(animId);
+    animRunning = false;
+    document.getElementById('btn-animate').textContent = '▶ Morph α';
+    draw();
+    return;
+  }
+  animRunning = true;
+  animAlpha = 0.1;
+  animDir = 1;
+  document.getElementById('btn-animate').textContent = '⏹ Stop';
+  function step() {
+    animAlpha += animDir * 0.005;
+    if (animAlpha >= 0.9) { animAlpha=0.9; animDir=-1; }
+    if (animAlpha <= 0.1) { animAlpha=0.1; animDir=1; }
+    document.getElementById('alpha-slider').value = animAlpha;
+    document.getElementById('alpha-val').textContent = animAlpha.toFixed(2);
+    draw(animAlpha);
+    if (animRunning) animId = requestAnimationFrame(step);
+  }
+  animId = requestAnimationFrame(step);
+});
+
+draw();
+</script>
+</body>
+</html>
